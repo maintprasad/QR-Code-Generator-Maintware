@@ -6,7 +6,6 @@
 <title>QR Code Generator — MaintWare</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<!-- jsQR untuk decode QR dari kamera -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.min.js"></script>
 <style>
 :root {
@@ -49,6 +48,12 @@ body{background:var(--bg);font-family:'IBM Plex Sans',sans-serif;font-size:14px;
 .btn-scan{background:linear-gradient(135deg,var(--green),var(--blue));color:#fff;font-size:13px;padding:8px 18px;border-radius:6px;display:flex;align-items:center;gap:7px;box-shadow:0 2px 12px rgba(74,158,63,.4)}
 .btn-scan:hover{transform:translateY(-1px);box-shadow:0 4px 18px rgba(74,158,63,.5)}
 
+/* ── CAMERA STATUS PILL (topbar) ── */
+.cam-status-pill{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:4px 10px;border-radius:4px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:rgba(255,255,255,.5);white-space:nowrap;cursor:pointer;transition:all .15s}
+.cam-status-pill.ready{border-color:rgba(74,158,63,.5);background:rgba(74,158,63,.2);color:#7ddf6e}
+.cam-status-pill.error{border-color:rgba(192,57,43,.4);background:rgba(192,57,43,.15);color:#e07070}
+.cam-status-pill:hover{background:rgba(255,255,255,.18);color:#fff}
+
 /* ── CONTENT ── */
 .content{padding:24px;max-width:1440px;margin:0 auto}
 
@@ -80,51 +85,72 @@ body{background:var(--bg);font-family:'IBM Plex Sans',sans-serif;font-size:14px;
 .cam-corner.tr{top:0;right:0;border-width:2px 2px 0 0}
 .cam-corner.bl{bottom:0;left:0;border-width:0 0 2px 2px}
 .cam-corner.br{bottom:0;right:0;border-width:0 2px 2px 0}
-.cam-status{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);text-align:center;padding:6px 0}
+.cam-status-txt{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);text-align:center;padding:6px 0}
 canvas#camCanvas{display:none}
 
-/* ── STOCK MODAL ── */
-.stock-modal{background:var(--bg2);border-radius:14px;width:100%;max-width:460px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4);animation:modalUp .25s ease}
-.stk-hdr{padding:18px 22px 0;border-bottom:1px solid var(--border);padding-bottom:14px}
-.stk-title{font-size:15px;font-weight:700;color:var(--navy)}
-.stk-item-info{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:13px 16px;margin-bottom:14px}
-.stk-item-code{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--navy);margin-bottom:2px}
-.stk-item-name{font-size:14px;font-weight:600;color:var(--text);margin-bottom:8px}
-.stk-item-meta{display:flex;gap:12px;flex-wrap:wrap}
-.stk-meta-box{display:flex;flex-direction:column;gap:2px}
-.stk-meta-lbl{font-size:9px;font-family:'IBM Plex Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:.07em}
-.stk-meta-val{font-size:15px;font-weight:700;color:var(--navy)}
+/* ── STOCK MODAL — FULL SCREEN ── */
+.stock-modal-overlay{display:none;position:fixed;inset:0;background:rgba(10,20,10,.6);backdrop-filter:blur(3px);z-index:500;align-items:center;justify-content:center}
+.stock-modal-overlay.open{display:flex}
+.stock-modal{
+  background:var(--bg2);
+  width:100%;
+  height:100%;
+  max-width:100vw;
+  max-height:100vh;
+  border-radius:0;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  animation:modalUp .2s ease;
+}
+.stk-hdr{background:var(--navy);padding:18px 24px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.stk-title{font-size:16px;font-weight:700;color:#fff;font-family:'IBM Plex Mono',monospace}
+.stk-close-btn{background:rgba(255,255,255,.15);border:none;color:#fff;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .12s;flex-shrink:0}
+.stk-close-btn:hover{background:rgba(255,255,255,.3)}
+.modal-body{padding:24px;overflow-y:auto;flex:1;max-width:640px;width:100%;margin:0 auto}
+
+.stk-item-info{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:20px}
+.stk-item-code{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:var(--navy);margin-bottom:4px}
+.stk-item-name{font-size:20px;font-weight:700;color:var(--text);margin-bottom:14px;line-height:1.3}
+.stk-item-meta{display:flex;gap:16px;flex-wrap:wrap}
+.stk-meta-box{display:flex;flex-direction:column;gap:3px}
+.stk-meta-lbl{font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:.07em}
+.stk-meta-val{font-size:22px;font-weight:700;color:var(--navy)}
 .stk-meta-val.low{color:var(--red)}
-.type-toggle{display:flex;gap:8px;margin-bottom:14px}
-.type-btn{flex:1;padding:10px;text-align:center;border-radius:7px;border:1.5px solid var(--border);cursor:pointer;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:13px;transition:all .15s;color:var(--text2);background:var(--bg3)}
+.stk-meta-val.sm{font-size:15px}
+
+.type-toggle{display:flex;gap:10px;margin-bottom:20px}
+.type-btn{flex:1;padding:16px;text-align:center;border-radius:10px;border:2px solid var(--border);cursor:pointer;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:16px;transition:all .15s;color:var(--text2);background:var(--bg3)}
 .type-btn.in.active{background:rgba(74,158,63,.12);border-color:var(--green);color:var(--green2)}
 .type-btn.out.active{background:rgba(192,57,43,.1);border-color:var(--red);color:var(--red)}
-.fg{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
-.flabel{font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--text3);letter-spacing:.07em;text-transform:uppercase}
-.finput,.ftextarea{background:var(--bg3);border:1.5px solid var(--border);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:13px;padding:9px 12px;border-radius:7px;outline:none;transition:border-color .15s;width:100%}
+
+.fg{display:flex;flex-direction:column;gap:7px;margin-bottom:16px}
+.flabel{font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--text3);letter-spacing:.07em;text-transform:uppercase}
+.finput,.ftextarea{background:var(--bg3);border:2px solid var(--border);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:16px;padding:13px 16px;border-radius:10px;outline:none;transition:border-color .15s;width:100%}
 .finput:focus,.ftextarea:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(74,158,63,.1)}
 .finput.err{border-color:var(--red)}
-.ftextarea{resize:vertical;min-height:60px}
-.ferr{font-size:11px;color:var(--red);min-height:16px}
-.preview-pill{font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 12px;border-radius:5px;margin-top:4px;font-weight:600}
+.ftextarea{resize:vertical;min-height:80px;font-size:15px}
+.ferr{font-size:12px;color:var(--red);min-height:18px}
+
+.preview-pill{font-family:'IBM Plex Mono',monospace;font-size:13px;padding:10px 16px;border-radius:8px;margin-top:6px;font-weight:700}
 .preview-pill.ok{background:rgba(74,158,63,.1);color:var(--green2);border:1px solid rgba(74,158,63,.25)}
 .preview-pill.warn{background:rgba(192,57,43,.08);color:var(--red);border:1px solid rgba(192,57,43,.2)}
-.modal-body{padding:16px 22px 22px}
-.form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
-.btn-confirm{background:var(--green);color:#fff;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;padding:9px 20px;border-radius:6px;border:none;cursor:pointer;transition:all .15s;letter-spacing:.04em}
+
+.form-actions{display:flex;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
+.btn-confirm{flex:1;background:var(--green);color:#fff;font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:700;padding:16px 20px;border-radius:10px;border:none;cursor:pointer;transition:all .15s;letter-spacing:.04em}
 .btn-confirm.out-mode{background:var(--red)}
-.btn-confirm:hover{opacity:.88;box-shadow:0 2px 10px rgba(0,0,0,.2)}
+.btn-confirm:hover{opacity:.88;box-shadow:0 4px 16px rgba(0,0,0,.2)}
 .btn-confirm:disabled{opacity:.4;cursor:not-allowed}
-.btn-cancel{background:none;border:1px solid var(--border);color:var(--text2);font-family:'IBM Plex Mono',monospace;font-size:11px;padding:8px 16px;border-radius:6px;cursor:pointer;transition:all .15s}
+.btn-cancel{background:none;border:2px solid var(--border);color:var(--text2);font-family:'IBM Plex Mono',monospace;font-size:13px;padding:14px 20px;border-radius:10px;cursor:pointer;transition:all .15s}
 .btn-cancel:hover{border-color:var(--green);color:var(--green2)}
 
 /* ── SUCCESS FLASH ── */
-.success-flash{display:none;background:linear-gradient(135deg,rgba(74,158,63,.15),rgba(74,158,63,.05));border:1px solid rgba(74,158,63,.4);border-radius:8px;padding:16px;text-align:center;margin-bottom:14px}
+.success-flash{display:none;background:linear-gradient(135deg,rgba(74,158,63,.15),rgba(74,158,63,.05));border:1px solid rgba(74,158,63,.4);border-radius:12px;padding:24px;text-align:center;margin-bottom:20px}
 .success-flash.show{display:block;animation:flashIn .3s ease}
 @keyframes flashIn{from{transform:scale(.95);opacity:0}to{transform:scale(1);opacity:1}}
-.success-flash .ico{font-size:28px;margin-bottom:6px}
-.success-flash .msg{font-weight:600;color:var(--green2);font-size:14px}
-.success-flash .sub{font-size:11px;color:var(--text3);margin-top:3px}
+.success-flash .ico{font-size:48px;margin-bottom:10px}
+.success-flash .msg{font-weight:700;color:var(--green2);font-size:20px;margin-bottom:4px}
+.success-flash .sub{font-size:13px;color:var(--text3);margin-top:5px}
 
 /* ── CONTROL BAR ── */
 .control-bar{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:20px;box-shadow:0 2px 8px rgba(26,58,107,.05)}
@@ -203,7 +229,8 @@ body.dark{--bg:#0f1a0f;--bg2:#1a2a1a;--bg3:#1f301f;--border:#2a4a2a;--navy:#7ab8
 body.dark .topbar{background:#0a150a}
 body.dark .qr-canvas-wrap{background:#fff}
 body.dark .scan-hero{background:linear-gradient(135deg,#0a1a3a,#0f2a5a)}
-body.dark .stock-modal,.body.dark .cam-modal{background:#1a2a1a}
+body.dark .stock-modal{background:#1a2a1a}
+body.dark .stk-hdr{background:#0a1a3a}
 
 /* ── PRINT ── */
 @media print{.topbar,.control-bar,.select-bar,.qr-card-actions,.progress-wrap,.scan-hero{display:none !important}
@@ -225,6 +252,10 @@ body.dark .stock-modal,.body.dark .cam-modal{background:#1a2a1a}
   </div>
   <div class="top-actions">
     <span class="pill loading" id="statusPill">⏳ Memuat...</span>
+    <!-- TOMBOL AKTIFKAN KAMERA DI TOPBAR -->
+    <button class="cam-status-pill" id="camTopbarBtn" onclick="initCamera()" title="Aktifkan kamera agar scan lebih cepat">
+      📷 Aktifkan Kamera
+    </button>
     <button class="btn btn-ghost" onclick="loadItems()">↻ Refresh</button>
     <button class="btn btn-ghost" onclick="printAll()">🖨 Print</button>
     <button class="btn btn-ghost" onclick="toggleDark()">🌙</button>
@@ -238,10 +269,10 @@ body.dark .stock-modal,.body.dark .cam-modal{background:#1a2a1a}
   <div class="scan-hero">
     <div class="scan-hero-text">
       <h2>📷 Scan QR untuk Update Stok</h2>
-      <p>Scan QR Code item untuk langsung membuka form Stock IN / OUT. Data akan langsung tersimpan ke MaintWare database.</p>
+      <p>Aktifkan kamera sekali via tombol di topbar, lalu scan QR kapan saja tanpa izin ulang. Data langsung tersimpan ke MaintWare.</p>
     </div>
     <div class="scan-hero-actions">
-      <button class="btn btn-scan" onclick="openCamera()">📷 Buka Kamera Scan</button>
+      <button class="btn btn-scan" onclick="openCameraScan()">📷 Buka Kamera Scan</button>
       <button class="btn btn-ghost" onclick="openManualModal()">⌨ Input Manual</button>
     </div>
   </div>
@@ -303,14 +334,14 @@ body.dark .stock-modal,.body.dark .cam-modal{background:#1a2a1a}
     </div>
   </div>
 
-</div><!-- end content -->
+</div>
 
 <!-- ═══ CAMERA MODAL ═══ -->
 <div class="overlay" id="camOverlay">
   <div class="cam-modal">
     <div class="cam-hdr">
       <span class="cam-title">📷 Scan QR Code Item</span>
-      <button class="cam-close" onclick="closeCamera()">×</button>
+      <button class="cam-close" onclick="closeCameraScan()">×</button>
     </div>
     <div class="cam-body">
       <div class="cam-video-wrap">
@@ -324,21 +355,23 @@ body.dark .stock-modal,.body.dark .cam-modal{background:#1a2a1a}
         </div>
       </div>
       <canvas id="camCanvas"></canvas>
-      <div class="cam-status" id="camStatus">Arahkan kamera ke QR Code item...</div>
+      <div class="cam-status-txt" id="camStatusTxt">Arahkan kamera ke QR Code item...</div>
       <div style="margin-top:8px;text-align:center">
-        <button class="btn btn-primary" style="width:100%;padding:10px" onclick="closeCamera()">Batal Scan</button>
+        <button class="btn btn-primary" style="width:100%;padding:10px" onclick="closeCameraScan()">Batal Scan</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ═══ STOCK MODAL ═══ -->
-<div class="overlay" id="stockOverlay">
+<!-- ═══ STOCK MODAL — FULL SCREEN ═══ -->
+<div class="stock-modal-overlay" id="stockOverlay">
   <div class="stock-modal">
+
     <div class="stk-hdr">
       <div class="stk-title" id="stkTitle">Update Stok</div>
-      <button class="cam-close" style="margin-top:4px" onclick="closeStockModal()">×</button>
+      <button class="stk-close-btn" onclick="closeStockModal()">×</button>
     </div>
+
     <div class="modal-body">
 
       <!-- Success flash -->
@@ -349,7 +382,7 @@ body.dark .stock-modal,.body.dark .cam-modal{background:#1a2a1a}
       </div>
 
       <!-- Item info -->
-      <div class="stk-item-info" id="stkItemInfo">
+      <div class="stk-item-info">
         <div class="stk-item-code" id="stkCode">—</div>
         <div class="stk-item-name" id="stkName">—</div>
         <div class="stk-item-meta">
@@ -359,11 +392,11 @@ body.dark .stock-modal,.body.dark .cam-modal{background:#1a2a1a}
           </div>
           <div class="stk-meta-box">
             <div class="stk-meta-lbl">Satuan</div>
-            <div class="stk-meta-val" id="stkUnit">—</div>
+            <div class="stk-meta-val sm" id="stkUnit">—</div>
           </div>
           <div class="stk-meta-box">
             <div class="stk-meta-lbl">Dept</div>
-            <div class="stk-meta-val" id="stkDept" style="font-size:12px">—</div>
+            <div class="stk-meta-val sm" id="stkDept">—</div>
           </div>
           <div class="stk-meta-box">
             <div class="stk-meta-lbl">Status</div>
@@ -397,8 +430,9 @@ body.dark .stock-modal,.body.dark .cam-modal{background:#1a2a1a}
 
       <div class="form-actions">
         <button class="btn-cancel" onclick="closeStockModal()">Batal</button>
-        <button class="btn-confirm" id="stkSubmitBtn" onclick="submitStock()">✓ CONFIRM IN</button>
+        <button class="btn-confirm" id="stkSubmitBtn" onclick="submitStock()">▲ CONFIRM IN</button>
       </div>
+
     </div>
   </div>
 </div>
@@ -410,18 +444,21 @@ body.dark .stock-modal,.body.dark .cam-modal{background:#1a2a1a}
 // ════════════════════════════════════════
 // CONFIG
 // ════════════════════════════════════════
-const API_URL    = 'https://script.google.com/macros/s/AKfycbyatglW7oeF9MD1kcxrSx6foacvI2LNjtySH3JfDhHIeGa20eNHCdVO_FJ-Qdx_eoOZ/exec';
-const QR_SIZES   = { sm: 100, md: 140, lg: 190 };
+const API_URL           = 'https://script.google.com/macros/s/AKfycbyatglW7oeF9MD1kcxrSx6foacvI2LNjtySH3JfDhHIeGa20eNHCdVO_FJ-Qdx_eoOZ/exec';
+const QR_SIZES          = { sm: 100, md: 140, lg: 190 };
 const MIN_STOCK_DEFAULT = 5;
 
-let allItems     = [];
-let filteredItems= [];
-let selected     = new Set();
-let currentSize  = 'md';
-let currentItem  = null;
-let txType       = 'IN';
-let camStream    = null;
-let scanInterval = null;
+let allItems      = [];
+let filteredItems = [];
+let selected      = new Set();
+let currentSize   = 'md';
+let currentItem   = null;
+let txType        = 'IN';
+
+// ── Kamera: stream disimpan permanen setelah diinit ──
+let camStream     = null;   // stream aktif, tidak dimatikan saat modal tutup
+let camReady      = false;  // true setelah izin diberikan
+let scanLoop      = null;   // { stop() } object untuk hentikan rAF
 
 // ════════════════════════════════════════
 // INIT
@@ -429,250 +466,125 @@ let scanInterval = null;
 document.addEventListener('DOMContentLoaded', () => {
   initDark();
   loadItems();
-  document.querySelectorAll('.overlay').forEach(el => {
-    el.addEventListener('click', e => {
-      if (e.target === el) {
-        if (el.id === 'camOverlay') closeCamera();
-        else if (el.id === 'stockOverlay') closeStockModal();
-      }
-    });
+  // Tutup camera overlay saat klik backdrop
+  document.getElementById('camOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('camOverlay')) closeCameraScan();
   });
+  // Stock modal TIDAK tutup saat klik backdrop (full screen, tidak ada backdrop klik)
 });
 
 // ════════════════════════════════════════
-// LOAD ITEMS FROM GAS
+// KAMERA — INIT SEKALI DI TOPBAR
 // ════════════════════════════════════════
-async function loadItems() {
-  setStatus('loading', '⏳ Memuat...');
-  showProgress(true, 'Menghubungkan ke GAS...', 10);
-
-  try {
-    showProgress(true, 'Mengambil ITEMS_DB...', 30);
-    const res  = await fetch(API_URL + '?action=getItems');
-    showProgress(true, 'Memproses data...', 65);
-
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    if (!data.success) throw new Error(data.message || 'Gagal ambil data');
-
-    allItems = Array.isArray(data.data) ? data.data : [];
-    filteredItems = [...allItems];
-    updateCount();
-    setStatus('ok', '✓ ' + allItems.length + ' items');
-    showProgress(true, 'Merender QR Codes...', 80);
-    await renderQRGrid(filteredItems);
-    showProgress(false);
-    toast('Loaded ' + allItems.length + ' items', 'success');
-  } catch(err) {
-    setStatus('err', '✗ Error');
-    showProgress(false);
-    document.getElementById('qrGrid').innerHTML = `
-      <div class="state-box" style="grid-column:1/-1">
-        <div class="state-ico">⚠️</div>
-        <div class="state-msg">Gagal memuat data</div>
-        <div class="state-sub">${esc(err.message)}</div>
-        <button class="btn btn-primary" style="margin-top:16px;color:#fff;padding:9px 20px;border-radius:6px;background:var(--green);border:none;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-weight:700" onclick="loadItems()">↻ Coba Lagi</button>
-      </div>`;
-    toast('Error: ' + err.message, 'error');
-  }
-}
-
-// ════════════════════════════════════════
-// RENDER QR GRID
-// ════════════════════════════════════════
-async function renderQRGrid(items) {
-  const grid = document.getElementById('qrGrid');
-  grid.innerHTML = '';
-  grid.className = 'qr-grid size-' + currentSize;
-  selected.clear();
-  updateSelectBar();
-
-  if (!items.length) {
-    grid.innerHTML = `<div class="state-box" style="grid-column:1/-1">
-      <div class="state-ico">📦</div>
-      <div class="state-msg">Tidak ada item yang cocok</div>
-      <div class="state-sub">Coba ubah filter pencarian</div>
-    </div>`;
-    return;
-  }
-
-  const BATCH = 10;
-  for (let i = 0; i < items.length; i += BATCH) {
-    const batch = items.slice(i, i + BATCH);
-    batch.forEach(item => grid.appendChild(buildCard(item)));
-    await new Promise(r => setTimeout(r, 0));
-    batch.forEach(item => generateQR(item));
-    const pct = Math.min(99, Math.round((i + BATCH) / items.length * 100));
-    showProgress(true, `Merender QR (${Math.min(i+BATCH, items.length)}/${items.length})`, pct);
-    await new Promise(r => setTimeout(r, 0));
-  }
-  showProgress(false);
-}
-
-function buildCard(item) {
-  const code     = item.itemCode || '?';
-  const name     = item.itemName || '—';
-  const dept     = item.department || '';
-  const stock    = item.stock !== undefined ? item.stock : '?';
-  const unit     = item.unit || 'pcs';
-  const minStock = MIN_STOCK_DEFAULT;
-  const isLow    = typeof stock === 'number' && stock < minStock;
-
-  const deptCls  = { Mechanical:'dept-mech', Electrical:'dept-elec', Civil:'dept-civil' }[dept] || '';
-  const badgeCls = { Mechanical:'b-mech', Electrical:'b-elec', Civil:'b-civil' }[dept] || '';
-
-  const card = document.createElement('div');
-  card.className = 'qr-card ' + deptCls;
-  card.id = 'card-' + sid(code);
-  card.dataset.code = code;
-  card.onclick = e => { if (!e.target.closest('.qr-action-btn')) toggleSelect(code); };
-
-  card.innerHTML = `
-    <div class="qr-canvas-wrap" id="qrwrap-${sid(code)}">
-      <div style="width:${QR_SIZES[currentSize]}px;height:${QR_SIZES[currentSize]}px;display:flex;align-items:center;justify-content:center">
-        <span class="spinner"></span>
-      </div>
-    </div>
-    <div class="qr-code-label">${esc(code)}</div>
-    <div class="qr-name-label">${esc(name)}</div>
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
-      ${dept ? `<span class="badge ${badgeCls}">${esc(dept)}</span>` : ''}
-      <span class="qr-stock" style="${isLow?'color:var(--red);font-weight:700':''}">
-        ${isLow ? '⚠ ' : ''}Stok: ${stock} ${esc(unit)}
-      </span>
-    </div>
-    <div class="qr-card-actions">
-      <button class="qr-action-btn stock-btn" onclick="openStockModal('${esc(code)}')">± Stok</button>
-      <button class="qr-action-btn" onclick="downloadQR('${esc(code)}','${esc(name.replace(/'/g,''))}')">⬇ DL</button>
-      <button class="qr-action-btn" onclick="printSingle('${esc(code)}')">🖨</button>
-    </div>`;
-  return card;
-}
-
-function generateQR(item) {
-  const code   = item.itemCode || '?';
-  const wrapEl = document.getElementById('qrwrap-' + sid(code));
-  if (!wrapEl) return;
-  const qrText = code + '|' + (item.itemName || '');
-  wrapEl.innerHTML = '';
-  try {
-    new QRCode(wrapEl, {
-      text:         qrText,
-      width:        QR_SIZES[currentSize],
-      height:       QR_SIZES[currentSize],
-      colorDark:    '#1a3a6b',
-      colorLight:   '#ffffff',
-      correctLevel: QRCode.CorrectLevel.M,
-    });
-  } catch(e) {
-    wrapEl.innerHTML = `<div style="font-size:10px;color:#c0392b;text-align:center;padding:8px">QR Error</div>`;
-  }
-}
-
-// ════════════════════════════════════════
-// CAMERA SCAN (FIXED)
-// ════════════════════════════════════════
-async function openCamera() {
-  document.getElementById('camOverlay').classList.add('open');
-  document.getElementById('camStatus').textContent = 'Meminta akses kamera...';
+async function initCamera() {
+  const btn = document.getElementById('camTopbarBtn');
+  btn.textContent = '⏳ Meminta izin...';
 
   try {
     camStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
     });
+
+    // Pasang stream ke video element sekarang — biar tidak perlu setup ulang saat scan
     const video = document.getElementById('camVideo');
     video.srcObject = camStream;
-
-    // FIX: Tunggu metadata video benar-benar siap sebelum mulai scan
     await new Promise((resolve, reject) => {
       video.onloadedmetadata = resolve;
       video.onerror = reject;
       video.play();
     });
 
-    document.getElementById('camStatus').textContent = 'Arahkan kamera ke QR Code item...';
-    startScanLoop();
+    camReady = true;
+    btn.textContent = '✓ Kamera Siap';
+    btn.classList.add('ready');
+    btn.onclick = null; // Tidak perlu klik lagi
+    toast('Kamera aktif — scan QR langsung tanpa izin ulang!', 'success');
+
   } catch(err) {
-    document.getElementById('camStatus').textContent = '❌ Kamera tidak bisa diakses: ' + err.message;
+    camReady = false;
+    btn.textContent = '✗ Kamera Error';
+    btn.classList.add('error');
     toast('Kamera error: ' + err.message, 'error');
   }
 }
 
-function closeCamera() {
-  stopScan();
-  document.getElementById('camOverlay').classList.remove('open');
+// ════════════════════════════════════════
+// BUKA / TUTUP CAMERA MODAL (scan)
+// ════════════════════════════════════════
+async function openCameraScan() {
+  // Kalau kamera belum diinit dari topbar, init sekarang
+  if (!camReady) {
+    await initCamera();
+    if (!camReady) return; // Gagal
+  }
+
+  document.getElementById('camOverlay').classList.add('open');
+  document.getElementById('camStatusTxt').textContent = 'Arahkan kamera ke QR Code item...';
+
+  // Video sudah ada stream-nya, langsung play ulang kalau perlu
+  const video = document.getElementById('camVideo');
+  if (video.paused) video.play();
+
+  startScanLoop();
 }
 
+function closeCameraScan() {
+  // Hentikan scan loop TAPI jangan matikan stream
+  if (scanLoop) { scanLoop.stop(); scanLoop = null; }
+  document.getElementById('camOverlay').classList.remove('open');
+  // Video tetap hidup di background (stream tidak di-stop)
+}
+
+// ════════════════════════════════════════
+// SCAN LOOP (requestAnimationFrame)
+// ════════════════════════════════════════
 function startScanLoop() {
   const video  = document.getElementById('camVideo');
   const canvas = document.getElementById('camCanvas');
-  const ctx    = canvas.getContext('2d', { willReadFrequently: true }); // FIX: hint performa
-  let scanning = true;
+  const ctx    = canvas.getContext('2d', { willReadFrequently: true });
+  let active   = true;
 
   function tick() {
-    if (!scanning) return;
-
-    // FIX: Guard eksplisit — pastikan video punya dimensi valid sebelum drawImage
+    if (!active) return;
     if (video.videoWidth > 0 && video.videoHeight > 0) {
       canvas.width  = video.videoWidth;
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
       try {
         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code    = jsQR(imgData.data, imgData.width, imgData.height, {
-          inversionAttempts: 'dontInvert'
-        });
+        const code    = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'dontInvert' });
         if (code && code.data && code.data.trim() !== '') {
-          scanning = false; // Stop loop sebelum callback
+          active = false;
           onQRDetected(code.data.trim());
           return;
         }
-      } catch(e) { /* frame rusak, lanjut ke frame berikutnya */ }
+      } catch(e) { /* frame rusak, lanjut */ }
     }
-
-    // FIX: requestAnimationFrame jauh lebih reliable dari setInterval
     requestAnimationFrame(tick);
   }
 
-  // Simpan fungsi stop ke scanInterval agar bisa dipanggil dari closeCamera
-  scanInterval = { stop: () => { scanning = false; } };
+  scanLoop = { stop: () => { active = false; } };
   requestAnimationFrame(tick);
 }
 
-function stopScan() {
-  // FIX: Stop loop rAF via flag object
-  if (scanInterval && typeof scanInterval.stop === 'function') {
-    scanInterval.stop();
-  }
-  scanInterval = null;
-
-  if (camStream) {
-    camStream.getTracks().forEach(t => t.stop());
-    camStream = null;
-  }
-  const video = document.getElementById('camVideo');
-  video.srcObject = null;
-}
-
+// ════════════════════════════════════════
+// QR TERDETEKSI
+// ════════════════════════════════════════
 function onQRDetected(qrText) {
-  document.getElementById('camStatus').textContent = '✅ QR terdeteksi: ' + qrText;
-
-  // FIX: Gunakan indexOf agar aman meski nama item mengandung karakter pipe '|'
+  document.getElementById('camStatusTxt').textContent = '✅ QR terdeteksi!';
   const pipeIdx  = qrText.indexOf('|');
   const itemCode = (pipeIdx > -1 ? qrText.substring(0, pipeIdx) : qrText).trim();
-
-  const item = allItems.find(i => i.itemCode === itemCode);
+  const item     = allItems.find(i => i.itemCode === itemCode);
 
   setTimeout(() => {
-    closeCamera();
+    closeCameraScan();
     if (item) {
       openStockModal(item.itemCode);
     } else {
-      toast('Item ' + itemCode + ' ditemukan di QR, mengambil data...', 'info');
+      toast('Item ' + itemCode + ' ditemukan, mengambil data...', 'info');
       fetchAndOpenModal(itemCode);
     }
-  }, 600);
+  }, 400);
 }
 
 async function fetchAndOpenModal(itemCode) {
@@ -682,11 +594,8 @@ async function fetchAndOpenModal(itemCode) {
     if (data.success && Array.isArray(data.data)) {
       allItems = data.data;
       const item = allItems.find(i => i.itemCode === itemCode);
-      if (item) {
-        openStockModal(item.itemCode);
-      } else {
-        toast('Item ' + itemCode + ' tidak ditemukan di database', 'error');
-      }
+      if (item) openStockModal(item.itemCode);
+      else toast('Item ' + itemCode + ' tidak ditemukan di database', 'error');
     }
   } catch(e) {
     toast('Gagal fetch data: ' + e.message, 'error');
@@ -700,15 +609,12 @@ function openManualModal() {
   const code = prompt('Masukkan Kode Item (contoh: MECH-001):');
   if (!code) return;
   const item = allItems.find(i => i.itemCode === code.trim().toUpperCase());
-  if (item) {
-    openStockModal(item.itemCode);
-  } else {
-    toast('Item "' + code + '" tidak ditemukan', 'error');
-  }
+  if (item) openStockModal(item.itemCode);
+  else toast('Item "' + code + '" tidak ditemukan', 'error');
 }
 
 // ════════════════════════════════════════
-// STOCK MODAL
+// STOCK MODAL — FULL SCREEN
 // ════════════════════════════════════════
 function openStockModal(itemCode) {
   const item = allItems.find(i => i.itemCode === itemCode);
@@ -717,27 +623,27 @@ function openStockModal(itemCode) {
   currentItem = item;
   txType      = 'IN';
 
-  document.getElementById('stkQty').value    = '';
-  document.getElementById('stkPic').value    = '';
-  document.getElementById('stkNotes').value  = '';
+  document.getElementById('stkQty').value   = '';
+  document.getElementById('stkPic').value   = '';
+  document.getElementById('stkNotes').value = '';
   document.getElementById('stkQtyErr').textContent  = '';
   document.getElementById('stkPicErr').textContent  = '';
   document.getElementById('stkPreview').innerHTML   = '';
   document.getElementById('successFlash').classList.remove('show');
 
-  document.getElementById('stkTitle').textContent   = 'Update Stok — ' + item.itemCode;
+  document.getElementById('stkTitle').textContent   = item.itemCode;
   document.getElementById('stkCode').textContent    = item.itemCode;
   document.getElementById('stkName').textContent    = item.itemName || '—';
   document.getElementById('stkCurrent').textContent = item.stock !== undefined ? item.stock : '?';
   document.getElementById('stkUnit').textContent    = item.unit || 'pcs';
   document.getElementById('stkDept').textContent    = item.department || '—';
+
   const isLow = (item.stock || 0) < MIN_STOCK_DEFAULT;
-  document.getElementById('stkStatus').innerHTML = `<span class="badge ${isLow?'b-low':'b-ok'}">${isLow?'⚠ LOW':'OK'}</span>`;
+  document.getElementById('stkStatus').innerHTML = `<span class="badge ${isLow?'b-low':'b-ok'}" style="font-size:11px;padding:3px 10px">${isLow?'⚠ LOW STOCK':'✓ OK'}</span>`;
 
   setTxType('IN');
   document.getElementById('stockOverlay').classList.add('open');
-
-  setTimeout(() => document.getElementById('stkQty').focus(), 200);
+  setTimeout(() => document.getElementById('stkQty').focus(), 250);
 }
 
 function closeStockModal() {
@@ -751,7 +657,7 @@ function setTxType(type) {
   document.getElementById('btnOUT').classList.toggle('active', type === 'OUT');
   const btn = document.getElementById('stkSubmitBtn');
   btn.textContent = type === 'IN' ? '▲ CONFIRM IN' : '▼ CONFIRM OUT';
-  btn.className = 'btn-confirm' + (type === 'OUT' ? ' out-mode' : '');
+  btn.className   = 'btn-confirm' + (type === 'OUT' ? ' out-mode' : '');
   previewQty();
 }
 
@@ -781,14 +687,8 @@ async function submitStock() {
   document.getElementById('stkQtyErr').textContent = '';
   document.getElementById('stkPicErr').textContent = '';
 
-  if (!qty || qty <= 0) {
-    document.getElementById('stkQtyErr').textContent = 'Jumlah wajib diisi (min 1)';
-    ok = false;
-  }
-  if (!pic) {
-    document.getElementById('stkPicErr').textContent = 'PIC wajib diisi';
-    ok = false;
-  }
+  if (!qty || qty <= 0) { document.getElementById('stkQtyErr').textContent = 'Jumlah wajib diisi (min 1)'; ok = false; }
+  if (!pic)             { document.getElementById('stkPicErr').textContent = 'PIC wajib diisi'; ok = false; }
   if (txType === 'OUT' && qty > (currentItem?.stock || 0)) {
     document.getElementById('stkQtyErr').textContent = 'Stok tidak cukup. Maks: ' + (currentItem?.stock||0);
     ok = false;
@@ -803,34 +703,21 @@ async function submitStock() {
     const res = await fetch(API_URL + '?action=updateStock', {
       method:  'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body:    JSON.stringify({
-        itemCode: currentItem.itemCode,
-        txType:   txType,
-        quantity: qty,
-        pic:      pic,
-        notes:    notes,
-      })
+      body:    JSON.stringify({ itemCode: currentItem.itemCode, txType, quantity: qty, pic, notes })
     });
-
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Gagal update stok');
 
     const idx = allItems.findIndex(i => i.itemCode === currentItem.itemCode);
-    const newStock = txType === 'IN'
-      ? (currentItem.stock || 0) + qty
-      : (currentItem.stock || 0) - qty;
-    if (idx > -1) {
-      allItems[idx].stock = newStock;
-      currentItem.stock   = newStock;
-    }
+    const newStock = txType === 'IN' ? (currentItem.stock||0) + qty : (currentItem.stock||0) - qty;
+    if (idx > -1) { allItems[idx].stock = newStock; currentItem.stock = newStock; }
 
     refreshCardStock(currentItem.itemCode, newStock);
 
     document.getElementById('successFlash').classList.add('show');
     document.getElementById('successMsg').textContent =
-      txType === 'IN'
-        ? `+${qty} ${currentItem.unit||'pcs'} berhasil ditambahkan!`
-        : `-${qty} ${currentItem.unit||'pcs'} berhasil dikurangi!`;
+      txType === 'IN' ? `+${qty} ${currentItem.unit||'pcs'} berhasil ditambahkan!`
+                      : `-${qty} ${currentItem.unit||'pcs'} berhasil dikurangi!`;
     document.getElementById('successSub').textContent =
       currentItem.itemCode + ' — stok sekarang: ' + newStock + ' ' + (currentItem.unit||'pcs');
 
@@ -839,10 +726,9 @@ async function submitStock() {
     document.getElementById('stkPreview').innerHTML = '';
     document.getElementById('stkCurrent').textContent = newStock;
     const isLow = newStock < MIN_STOCK_DEFAULT;
-    document.getElementById('stkStatus').innerHTML = `<span class="badge ${isLow?'b-low':'b-ok'}">${isLow?'⚠ LOW':'OK'}</span>`;
+    document.getElementById('stkStatus').innerHTML = `<span class="badge ${isLow?'b-low':'b-ok'}" style="font-size:11px;padding:3px 10px">${isLow?'⚠ LOW STOCK':'✓ OK'}</span>`;
 
     toast(`Stock ${txType} berhasil: ${qty} ${currentItem.unit||'pcs'}`, 'success');
-
     setTimeout(() => closeStockModal(), 2200);
 
   } catch(err) {
@@ -859,12 +745,136 @@ function refreshCardStock(itemCode, newStock) {
   if (!card) return;
   const item  = allItems.find(i => i.itemCode === itemCode);
   if (!item) return;
-  const isLow = newStock < MIN_STOCK_DEFAULT;
+  const isLow   = newStock < MIN_STOCK_DEFAULT;
   const stockEl = card.querySelector('.qr-stock');
   if (stockEl) {
-    stockEl.textContent = (isLow ? '⚠ ' : '') + 'Stok: ' + newStock + ' ' + (item.unit||'pcs');
-    stockEl.style.color = isLow ? 'var(--red)' : '';
+    stockEl.textContent    = (isLow ? '⚠ ' : '') + 'Stok: ' + newStock + ' ' + (item.unit||'pcs');
+    stockEl.style.color      = isLow ? 'var(--red)' : '';
     stockEl.style.fontWeight = isLow ? '700' : '';
+  }
+}
+
+// ════════════════════════════════════════
+// LOAD ITEMS
+// ════════════════════════════════════════
+async function loadItems() {
+  setStatus('loading', '⏳ Memuat...');
+  showProgress(true, 'Menghubungkan ke GAS...', 10);
+  try {
+    showProgress(true, 'Mengambil ITEMS_DB...', 30);
+    const res  = await fetch(API_URL + '?action=getItems');
+    showProgress(true, 'Memproses data...', 65);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Gagal ambil data');
+    allItems      = Array.isArray(data.data) ? data.data : [];
+    filteredItems = [...allItems];
+    updateCount();
+    setStatus('ok', '✓ ' + allItems.length + ' items');
+    showProgress(true, 'Merender QR Codes...', 80);
+    await renderQRGrid(filteredItems);
+    showProgress(false);
+    toast('Loaded ' + allItems.length + ' items', 'success');
+  } catch(err) {
+    setStatus('err', '✗ Error');
+    showProgress(false);
+    document.getElementById('qrGrid').innerHTML = `
+      <div class="state-box" style="grid-column:1/-1">
+        <div class="state-ico">⚠️</div>
+        <div class="state-msg">Gagal memuat data</div>
+        <div class="state-sub">${esc(err.message)}</div>
+        <button class="btn btn-primary" style="margin-top:16px;color:#fff;padding:9px 20px;border-radius:6px;background:var(--green);border:none;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-weight:700" onclick="loadItems()">↻ Coba Lagi</button>
+      </div>`;
+    toast('Error: ' + err.message, 'error');
+  }
+}
+
+// ════════════════════════════════════════
+// RENDER GRID
+// ════════════════════════════════════════
+async function renderQRGrid(items) {
+  const grid = document.getElementById('qrGrid');
+  grid.innerHTML = '';
+  grid.className = 'qr-grid size-' + currentSize;
+  selected.clear();
+  updateSelectBar();
+
+  if (!items.length) {
+    grid.innerHTML = `<div class="state-box" style="grid-column:1/-1">
+      <div class="state-ico">📦</div>
+      <div class="state-msg">Tidak ada item yang cocok</div>
+      <div class="state-sub">Coba ubah filter pencarian</div>
+    </div>`;
+    return;
+  }
+
+  const BATCH = 10;
+  for (let i = 0; i < items.length; i += BATCH) {
+    const batch = items.slice(i, i + BATCH);
+    batch.forEach(item => grid.appendChild(buildCard(item)));
+    await new Promise(r => setTimeout(r, 0));
+    batch.forEach(item => generateQR(item));
+    const pct = Math.min(99, Math.round((i + BATCH) / items.length * 100));
+    showProgress(true, `Merender QR (${Math.min(i+BATCH,items.length)}/${items.length})`, pct);
+    await new Promise(r => setTimeout(r, 0));
+  }
+  showProgress(false);
+}
+
+function buildCard(item) {
+  const code   = item.itemCode || '?';
+  const name   = item.itemName || '—';
+  const dept   = item.department || '';
+  const stock  = item.stock !== undefined ? item.stock : '?';
+  const unit   = item.unit || 'pcs';
+  const isLow  = typeof stock === 'number' && stock < MIN_STOCK_DEFAULT;
+  const deptCls  = { Mechanical:'dept-mech', Electrical:'dept-elec', Civil:'dept-civil' }[dept] || '';
+  const badgeCls = { Mechanical:'b-mech', Electrical:'b-elec', Civil:'b-civil' }[dept] || '';
+
+  const card = document.createElement('div');
+  card.className = 'qr-card ' + deptCls;
+  card.id = 'card-' + sid(code);
+  card.dataset.code = code;
+  card.onclick = e => { if (!e.target.closest('.qr-action-btn')) toggleSelect(code); };
+
+  card.innerHTML = `
+    <div class="qr-canvas-wrap" id="qrwrap-${sid(code)}">
+      <div style="width:${QR_SIZES[currentSize]}px;height:${QR_SIZES[currentSize]}px;display:flex;align-items:center;justify-content:center">
+        <span class="spinner"></span>
+      </div>
+    </div>
+    <div class="qr-code-label">${esc(code)}</div>
+    <div class="qr-name-label">${esc(name)}</div>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
+      ${dept ? `<span class="badge ${badgeCls}">${esc(dept)}</span>` : ''}
+      <span class="qr-stock" style="${isLow?'color:var(--red);font-weight:700':''}">
+        ${isLow?'⚠ ':''}Stok: ${stock} ${esc(unit)}
+      </span>
+    </div>
+    <div class="qr-card-actions">
+      <button class="qr-action-btn stock-btn" onclick="openStockModal('${esc(code)}')">± Stok</button>
+      <button class="qr-action-btn" onclick="downloadQR('${esc(code)}','${esc(name.replace(/'/g,''))}')">⬇ DL</button>
+      <button class="qr-action-btn" onclick="printSingle('${esc(code)}')">🖨</button>
+    </div>`;
+  return card;
+}
+
+function generateQR(item) {
+  const code   = item.itemCode || '?';
+  const wrapEl = document.getElementById('qrwrap-' + sid(code));
+  if (!wrapEl) return;
+  wrapEl.innerHTML = '';
+  try {
+    new QRCode(wrapEl, {
+      text:         code + '|' + (item.itemName||''),
+      width:        QR_SIZES[currentSize],
+      height:       QR_SIZES[currentSize],
+      colorDark:    '#1a3a6b',
+      colorLight:   '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+  } catch(e) {
+    wrapEl.innerHTML = `<div style="font-size:10px;color:#c0392b;text-align:center;padding:8px">QR Error</div>`;
   }
 }
 
@@ -881,13 +891,12 @@ function filterItems() {
     if (q && !((i.itemCode||'').toLowerCase().includes(q) ||
                (i.itemName||'').toLowerCase().includes(q) ||
                (i.area||'').toLowerCase().includes(q)     ||
-               (i.pic||'').toLowerCase().includes(q)))    return false;
+               (i.pic||'').toLowerCase().includes(q))) return false;
     if (dept  && i.department !== dept)  return false;
     if (type  && i.itemType   !== type)  return false;
     if (speed && i.movingType !== speed) return false;
     return true;
   });
-
   updateCount();
   renderQRGrid(filteredItems);
 }
@@ -901,27 +910,14 @@ function updateCount() {
 // SELECT
 // ════════════════════════════════════════
 function toggleSelect(code) {
-  if (selected.has(code)) {
-    selected.delete(code);
-    document.getElementById('card-' + sid(code))?.classList.remove('selected');
-  } else {
-    selected.add(code);
-    document.getElementById('card-' + sid(code))?.classList.add('selected');
-  }
+  if (selected.has(code)) { selected.delete(code); document.getElementById('card-'+sid(code))?.classList.remove('selected'); }
+  else                    { selected.add(code);    document.getElementById('card-'+sid(code))?.classList.add('selected'); }
   updateSelectBar();
 }
-function selectAll() {
-  filteredItems.forEach(i => { selected.add(i.itemCode); document.getElementById('card-' + sid(i.itemCode))?.classList.add('selected'); });
-  updateSelectBar();
-}
-function clearSelect() {
-  selected.forEach(c => document.getElementById('card-' + sid(c))?.classList.remove('selected'));
-  selected.clear();
-  updateSelectBar();
-}
+function selectAll()  { filteredItems.forEach(i => { selected.add(i.itemCode); document.getElementById('card-'+sid(i.itemCode))?.classList.add('selected'); }); updateSelectBar(); }
+function clearSelect(){ selected.forEach(c => document.getElementById('card-'+sid(c))?.classList.remove('selected')); selected.clear(); updateSelectBar(); }
 function updateSelectBar() {
-  const bar = document.getElementById('selectBar');
-  bar.classList.toggle('visible', selected.size > 0);
+  document.getElementById('selectBar').classList.toggle('visible', selected.size > 0);
   document.getElementById('selectInfo').textContent = selected.size + ' item dipilih';
 }
 
@@ -930,14 +926,12 @@ function updateSelectBar() {
 // ════════════════════════════════════════
 function setSize(sz) {
   currentSize = sz;
-  document.querySelectorAll('.size-btn').forEach((b,i) => {
-    b.classList.toggle('active', ['sm','md','lg'][i] === sz);
-  });
+  document.querySelectorAll('.size-btn').forEach((b,i) => b.classList.toggle('active', ['sm','md','lg'][i] === sz));
   if (filteredItems.length) renderQRGrid(filteredItems);
 }
 
 // ════════════════════════════════════════
-// DOWNLOAD QR
+// DOWNLOAD
 // ════════════════════════════════════════
 function downloadQR(code, name) {
   const wrapEl = document.getElementById('qrwrap-' + sid(code));
@@ -946,7 +940,7 @@ function downloadQR(code, name) {
   const img    = wrapEl.querySelector('img');
   if (canvas) {
     const out = document.createElement('canvas');
-    const pad = 16; const lblH = 50;
+    const pad = 16, lblH = 50;
     out.width  = canvas.width  + pad * 2;
     out.height = canvas.height + pad * 2 + lblH;
     const ctx = out.getContext('2d');
@@ -955,8 +949,7 @@ function downloadQR(code, name) {
     ctx.fillStyle = '#1a3a6b'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
     ctx.fillText(code, out.width/2, canvas.height + pad + 18);
     ctx.fillStyle = '#3a5a3a'; ctx.font = '11px sans-serif';
-    const n = name.length > 28 ? name.slice(0,25)+'...' : name;
-    ctx.fillText(n, out.width/2, canvas.height + pad + 36);
+    ctx.fillText(name.length > 28 ? name.slice(0,25)+'...' : name, out.width/2, canvas.height + pad + 36);
     const a = document.createElement('a'); a.download = 'QR_' + code + '.png'; a.href = out.toDataURL('image/png'); a.click();
     toast('Downloaded: QR_' + code + '.png', 'success');
   } else if (img) {
@@ -969,8 +962,7 @@ async function downloadSelected() {
   const codes = [...selected];
   toast('Mengunduh ' + codes.length + ' QR...', 'info');
   for (const code of codes) {
-    const item = allItems.find(i => i.itemCode === code);
-    downloadQR(code, item?.itemName || '');
+    downloadQR(code, allItems.find(i=>i.itemCode===code)?.itemName||'');
     await new Promise(r => setTimeout(r, 180));
   }
   toast(codes.length + ' QR berhasil diunduh', 'success');
@@ -979,18 +971,19 @@ async function downloadSelected() {
 // ════════════════════════════════════════
 // PRINT
 // ════════════════════════════════════════
-function printAll()      { if (filteredItems.length) openPrintWin(filteredItems); else toast('Tidak ada item','error'); }
-function printSelected() { if (selected.size) openPrintWin(allItems.filter(i=>selected.has(i.itemCode))); else toast('Pilih item dulu','error'); }
+function printAll()        { if (filteredItems.length) openPrintWin(filteredItems); else toast('Tidak ada item','error'); }
+function printSelected()   { if (selected.size) openPrintWin(allItems.filter(i=>selected.has(i.itemCode))); else toast('Pilih item dulu','error'); }
 function printSingle(code) { const item = allItems.find(i=>i.itemCode===code); if(item) openPrintWin([item]); }
 
 function openPrintWin(items) {
+  const deptColor = { Mechanical:'#2b6cb8', Electrical:'#4a9e3f', Civil:'#2a7a5a' };
   const qrData = items.map(item => {
     const wrapEl = document.getElementById('qrwrap-' + sid(item.itemCode));
     const canvas = wrapEl?.querySelector('canvas');
     const img    = wrapEl?.querySelector('img');
-    return { code: item.itemCode, name: item.itemName||'—', dept: item.department||'', stock: item.stock||0, unit: item.unit||'pcs', imgSrc: canvas ? canvas.toDataURL('image/png') : (img?img.src:'') };
+    return { code: item.itemCode, name: item.itemName||'—', dept: item.department||'', stock: item.stock||0, unit: item.unit||'pcs',
+             imgSrc: canvas ? canvas.toDataURL('image/png') : (img?img.src:'') };
   });
-  const deptColor = { Mechanical:'#2b6cb8', Electrical:'#4a9e3f', Civil:'#2a7a5a' };
   const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"/>
   <title>QR Code — MaintWare</title>
   <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Arial,sans-serif;background:#fff;color:#111}
@@ -1000,8 +993,8 @@ function openPrintWin(items) {
   .card{border:1px solid #ccc;border-radius:7px;padding:10px 8px 8px;display:flex;flex-direction:column;align-items:center;gap:6px;break-inside:avoid}
   .card img{display:block;width:110px;height:110px}.card-code{font-family:monospace;font-size:12px;font-weight:700;color:#1a3a6b;text-align:center}
   .card-name{font-size:9.5px;color:#3a5a3a;text-align:center;line-height:1.3}.card-dept{font-size:8px;font-weight:700;padding:2px 5px;border-radius:3px}
-  .card-stock{font-size:9px;color:#888;font-family:monospace}.top-bar{height:3px;width:100%;border-radius:4px 4px 0 0;margin:-10px -8px 0;width:calc(100% + 16px)}
-  @media print{body{font-size:10px}.grid{grid-template-columns:repeat(4,1fr);gap:8px}}</style></head><body>
+  .card-stock{font-size:9px;color:#888;font-family:monospace}.top-bar{height:3px;width:calc(100% + 16px);margin:-10px -8px 0}
+  @media print{body{font-size:10px}.grid{gap:8px}}</style></head><body>
   <div class="page-hdr">
     <div><div class="page-hdr-title">🔲 QR Code — MaintWare Warehouse</div>
     <div class="page-hdr-meta">PT Prasad Seeds Indonesia · ${items.length} item · ${new Date().toLocaleString('id-ID')}</div></div>
@@ -1010,7 +1003,7 @@ function openPrintWin(items) {
     const dc = deptColor[it.dept]||'#1a3a6b';
     return `<div class="card">
       <div class="top-bar" style="background:${dc}"></div>
-      ${it.imgSrc?`<img src="${it.imgSrc}" alt="QR ${it.code}"/>`:'<div style="width:110px;height:110px;display:flex;align-items:center;justify-content:center;border:1px solid #eee;font-size:10px;color:#ccc">No QR</div>'}
+      ${it.imgSrc?`<img src="${it.imgSrc}" alt="QR ${it.code}"/>`:'<div style="width:110px;height:110px;border:1px solid #eee;display:flex;align-items:center;justify-content:center;font-size:10px;color:#ccc">No QR</div>'}
       <div class="card-code">${it.code}</div>
       <div class="card-name">${it.name}</div>
       <span class="card-dept" style="background:${dc}22;color:${dc};border:1px solid ${dc}44">${it.dept||'—'}</span>
@@ -1032,17 +1025,14 @@ function setStatus(type, msg) {
   const el = document.getElementById('statusPill');
   el.textContent = msg; el.className = 'pill ' + type;
 }
-
 function showProgress(vis, lbl, pct) {
-  const wrap = document.getElementById('progressWrap');
-  wrap.classList.toggle('visible', vis);
+  document.getElementById('progressWrap').classList.toggle('visible', vis);
   if (vis) {
     document.getElementById('progressLabel').textContent = lbl || '';
     document.getElementById('progressPct').textContent   = Math.round(pct||0) + '%';
     document.getElementById('progressFill').style.width  = (pct||0) + '%';
   }
 }
-
 function toast(msg, type) {
   const el = document.createElement('div');
   el.className = 'toast-item ' + (type||'info');
@@ -1050,12 +1040,10 @@ function toast(msg, type) {
   document.getElementById('toast').appendChild(el);
   setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(()=>el.remove(),300); }, 3500);
 }
-
 function toggleDark() {
   const d = document.body.classList.toggle('dark');
   localStorage.setItem('mw_qr_dark', d?'1':'0');
 }
-
 function initDark() {
   if (localStorage.getItem('mw_qr_dark') === '1') document.body.classList.add('dark');
 }
