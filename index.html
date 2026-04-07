@@ -252,7 +252,6 @@ body.dark .stk-hdr{background:#0a1a3a}
   </div>
   <div class="top-actions">
     <span class="pill loading" id="statusPill">⏳ Memuat...</span>
-    <!-- TOMBOL AKTIFKAN KAMERA DI TOPBAR -->
     <button class="cam-status-pill" id="camTopbarBtn" onclick="initCamera()" title="Aktifkan kamera agar scan lebih cepat">
       📷 Aktifkan Kamera
     </button>
@@ -455,10 +454,9 @@ let currentSize   = 'md';
 let currentItem   = null;
 let txType        = 'IN';
 
-// ── Kamera: stream disimpan permanen setelah diinit ──
-let camStream     = null;   // stream aktif, tidak dimatikan saat modal tutup
-let camReady      = false;  // true setelah izin diberikan
-let scanLoop      = null;   // { stop() } object untuk hentikan rAF
+let camStream = null;
+let camReady  = false;
+let scanLoop  = null;
 
 // ════════════════════════════════════════
 // INIT
@@ -466,11 +464,9 @@ let scanLoop      = null;   // { stop() } object untuk hentikan rAF
 document.addEventListener('DOMContentLoaded', () => {
   initDark();
   loadItems();
-  // Tutup camera overlay saat klik backdrop
   document.getElementById('camOverlay').addEventListener('click', e => {
     if (e.target === document.getElementById('camOverlay')) closeCameraScan();
   });
-  // Stock modal TIDAK tutup saat klik backdrop (full screen, tidak ada backdrop klik)
 });
 
 // ════════════════════════════════════════
@@ -485,7 +481,6 @@ async function initCamera() {
       video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
     });
 
-    // Pasang stream ke video element sekarang — biar tidak perlu setup ulang saat scan
     const video = document.getElementById('camVideo');
     video.srcObject = camStream;
     await new Promise((resolve, reject) => {
@@ -497,7 +492,7 @@ async function initCamera() {
     camReady = true;
     btn.textContent = '✓ Kamera Siap';
     btn.classList.add('ready');
-    btn.onclick = null; // Tidak perlu klik lagi
+    btn.onclick = null;
     toast('Kamera aktif — scan QR langsung tanpa izin ulang!', 'success');
 
   } catch(err) {
@@ -509,19 +504,17 @@ async function initCamera() {
 }
 
 // ════════════════════════════════════════
-// BUKA / TUTUP CAMERA MODAL (scan)
+// BUKA / TUTUP CAMERA MODAL
 // ════════════════════════════════════════
 async function openCameraScan() {
-  // Kalau kamera belum diinit dari topbar, init sekarang
   if (!camReady) {
     await initCamera();
-    if (!camReady) return; // Gagal
+    if (!camReady) return;
   }
 
   document.getElementById('camOverlay').classList.add('open');
   document.getElementById('camStatusTxt').textContent = 'Arahkan kamera ke QR Code item...';
 
-  // Video sudah ada stream-nya, langsung play ulang kalau perlu
   const video = document.getElementById('camVideo');
   if (video.paused) video.play();
 
@@ -529,14 +522,12 @@ async function openCameraScan() {
 }
 
 function closeCameraScan() {
-  // Hentikan scan loop TAPI jangan matikan stream
   if (scanLoop) { scanLoop.stop(); scanLoop = null; }
   document.getElementById('camOverlay').classList.remove('open');
-  // Video tetap hidup di background (stream tidak di-stop)
 }
 
 // ════════════════════════════════════════
-// SCAN LOOP (requestAnimationFrame)
+// SCAN LOOP
 // ════════════════════════════════════════
 function startScanLoop() {
   const video  = document.getElementById('camVideo');
@@ -568,34 +559,53 @@ function startScanLoop() {
 }
 
 // ════════════════════════════════════════
-// QR TERDETEKSI
+// QR TERDETEKSI — FIX BUG #1 #2 #3
 // ════════════════════════════════════════
 function onQRDetected(qrText) {
   document.getElementById('camStatusTxt').textContent = '✅ QR terdeteksi!';
-  const pipeIdx  = qrText.indexOf('|');
-  const itemCode = (pipeIdx > -1 ? qrText.substring(0, pipeIdx) : qrText).trim();
-  const item     = allItems.find(i => i.itemCode === itemCode);
 
-  setTimeout(() => {
-    closeCameraScan();
-    if (item) {
-      openStockModal(item.itemCode);
-    } else {
-      toast('Item ' + itemCode + ' ditemukan, mengambil data...', 'info');
-      fetchAndOpenModal(itemCode);
-    }
-  }, 400);
+  const pipeIdx  = qrText.indexOf('|');
+  const itemCode = (pipeIdx > -1 ? qrText.substring(0, pipeIdx) : qrText).trim().toUpperCase();
+
+  // FIX #3: Tutup kamera DULU sebelum buka modal (hilangkan race condition)
+  closeCameraScan();
+
+  // FIX #1: Gunakan toUpperCase() saat compare agar tidak case-sensitive
+  const item = allItems.find(i => (i.itemCode || '').trim().toUpperCase() === itemCode);
+
+  if (item) {
+    // Item ditemukan langsung — buka modal tanpa delay
+    openStockModal(item.itemCode);
+  } else if (allItems.length === 0) {
+    // allItems belum ter-load sama sekali — fetch dulu
+    toast('Mengambil data item...', 'info');
+    fetchAndOpenModal(itemCode);
+  } else {
+    // allItems sudah ada tapi kode tidak ditemukan
+    toast('Item ' + itemCode + ' tidak ditemukan di database', 'error');
+  }
 }
 
+// FIX #2: Update filteredItems juga setelah fetch
 async function fetchAndOpenModal(itemCode) {
   try {
     const res  = await fetch(API_URL + '?action=getItems');
     const data = await res.json();
     if (data.success && Array.isArray(data.data)) {
-      allItems = data.data;
-      const item = allItems.find(i => i.itemCode === itemCode);
-      if (item) openStockModal(item.itemCode);
-      else toast('Item ' + itemCode + ' tidak ditemukan di database', 'error');
+      allItems      = data.data;
+      filteredItems = [...allItems]; // FIX: sync filteredItems
+      updateCount();
+
+      const item = allItems.find(i =>
+        (i.itemCode || '').trim().toUpperCase() === itemCode.toUpperCase()
+      );
+      if (item) {
+        openStockModal(item.itemCode);
+      } else {
+        toast('Item ' + itemCode + ' tidak ditemukan di database', 'error');
+      }
+    } else {
+      throw new Error(data.message || 'Gagal ambil data');
     }
   } catch(e) {
     toast('Gagal fetch data: ' + e.message, 'error');
@@ -608,7 +618,9 @@ async function fetchAndOpenModal(itemCode) {
 function openManualModal() {
   const code = prompt('Masukkan Kode Item (contoh: MECH-001):');
   if (!code) return;
-  const item = allItems.find(i => i.itemCode === code.trim().toUpperCase());
+  const item = allItems.find(i =>
+    (i.itemCode || '').trim().toUpperCase() === code.trim().toUpperCase()
+  );
   if (item) openStockModal(item.itemCode);
   else toast('Item "' + code + '" tidak ditemukan', 'error');
 }
@@ -748,7 +760,7 @@ function refreshCardStock(itemCode, newStock) {
   const isLow   = newStock < MIN_STOCK_DEFAULT;
   const stockEl = card.querySelector('.qr-stock');
   if (stockEl) {
-    stockEl.textContent    = (isLow ? '⚠ ' : '') + 'Stok: ' + newStock + ' ' + (item.unit||'pcs');
+    stockEl.textContent      = (isLow ? '⚠ ' : '') + 'Stok: ' + newStock + ' ' + (item.unit||'pcs');
     stockEl.style.color      = isLow ? 'var(--red)' : '';
     stockEl.style.fontWeight = isLow ? '700' : '';
   }
