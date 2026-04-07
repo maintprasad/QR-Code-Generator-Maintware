@@ -5,8 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>QR Code Generator — MaintWare</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+        onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';document.head.appendChild(s)"></script>
+
+<!-- jsQR: coba 3 CDN berbeda, lalu fallback ke BarcodeDetector -->
+<script>
+(function loadJsQR() {
+  var cdns = [
+    'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js',
+    'https://unpkg.com/jsqr@1.4.0/dist/jsQR.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.min.js'
+  ];
+  var idx = 0;
+  function tryNext() {
+    if (idx >= cdns.length) {
+      // Semua CDN gagal — pakai BarcodeDetector native
+      console.warn('jsQR tidak bisa dimuat dari CDN manapun. Menggunakan BarcodeDetector native.');
+      window._jsQRFailed = true;
+      return;
+    }
+    var s = document.createElement('script');
+    s.src = cdns[idx++];
+    s.onerror = tryNext;
+    document.head.appendChild(s);
+  }
+  tryNext();
+})();
+</script>
 <style>
 :root {
   --navy:   #1a3a6b;
@@ -86,10 +111,10 @@ body{background:var(--bg);font-family:'IBM Plex Sans',sans-serif;font-size:14px;
 .cam-corner.bl{bottom:0;left:0;border-width:0 0 2px 2px}
 .cam-corner.br{bottom:0;right:0;border-width:0 2px 2px 0}
 .cam-status-txt{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);text-align:center;padding:6px 0}
-canvas#camCanvas{display:none}
+canvas#camCanvas{position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none}
 
 /* ── STOCK MODAL — FULL SCREEN ── */
-.stock-modal-overlay{display:none;position:fixed;inset:0;background:rgba(10,20,10,.6);backdrop-filter:blur(3px);z-index:500;align-items:center;justify-content:center}
+.stock-modal-overlay{display:none;position:fixed;inset:0;background:rgba(10,20,10,.6);backdrop-filter:blur(3px);z-index:600;align-items:center;justify-content:center}
 .stock-modal-overlay.open{display:flex}
 .stock-modal{
   background:var(--bg2);
@@ -422,6 +447,37 @@ body.dark .stk-hdr{background:#0a1a3a}
         <input type="text" class="finput" id="stkPic" placeholder="Nama teknisi / operator"/>
         <div class="ferr" id="stkPicErr"></div>
       </div>
+
+      <!-- Peruntukan — hanya muncul saat STOCK OUT -->
+      <div id="peruntukanSection" style="display:none">
+        <div style="background:rgba(192,57,43,.06);border:1px solid rgba(192,57,43,.2);border-radius:10px;padding:14px 16px;margin-bottom:16px">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--red);letter-spacing:.07em;text-transform:uppercase;margin-bottom:12px">📍 Peruntukan (Wajib untuk Stock OUT)</div>
+          <div class="fg" style="margin-bottom:10px">
+            <label class="flabel">Unit *</label>
+            <select class="finput" id="stkUnit_sel" onchange="onUnitChange()" style="cursor:pointer">
+              <option value="">— Pilih Unit —</option>
+            </select>
+            <div class="ferr" id="stkUnitErr"></div>
+          </div>
+          <div class="fg" style="margin-bottom:10px">
+            <label class="flabel">Area *</label>
+            <select class="finput" id="stkArea_sel" onchange="onAreaChange()" style="cursor:pointer" disabled>
+              <option value="">— Pilih Area —</option>
+            </select>
+            <div class="ferr" id="stkAreaErr"></div>
+          </div>
+          <div class="fg" style="margin-bottom:4px">
+            <label class="flabel">Equipment *</label>
+            <select class="finput" id="stkEquip_sel" style="cursor:pointer" disabled>
+              <option value="">— Pilih Equipment —</option>
+            </select>
+            <div class="ferr" id="stkEquipErr"></div>
+          </div>
+          <!-- Preview Peruntukan -->
+          <div id="peruntukanPreview" style="display:none;margin-top:10px;background:rgba(43,108,184,.08);border:1px solid rgba(43,108,184,.2);border-radius:7px;padding:9px 12px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--navy)"></div>
+        </div>
+      </div>
+
       <div class="fg">
         <label class="flabel">Notes / Keterangan</label>
         <textarea class="ftextarea" id="stkNotes" placeholder="Contoh: Untuk maintenance CTP-1, PM rutin, dll."></textarea>
@@ -454,6 +510,11 @@ let currentSize   = 'md';
 let currentItem   = null;
 let txType        = 'IN';
 
+// EQ reference data
+let eqUnits     = [];
+let eqAreas     = [];
+let eqEquipment = [];
+
 let camStream = null;
 let camReady  = false;
 let scanLoop  = null;
@@ -475,26 +536,18 @@ document.addEventListener('DOMContentLoaded', () => {
 async function initCamera() {
   const btn = document.getElementById('camTopbarBtn');
   btn.textContent = '⏳ Meminta izin...';
-
   try {
+    // Hanya minta izin — stream TIDAK dipasang ke video di sini
+    // karena video element ada di modal yang masih display:none
+    // Mobile browser tidak load metadata video jika element tidak visible
     camStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
     });
-
-    const video = document.getElementById('camVideo');
-    video.srcObject = camStream;
-    await new Promise((resolve, reject) => {
-      video.onloadedmetadata = resolve;
-      video.onerror = reject;
-      video.play();
-    });
-
     camReady = true;
     btn.textContent = '✓ Kamera Siap';
     btn.classList.add('ready');
     btn.onclick = null;
-    toast('Kamera aktif — scan QR langsung tanpa izin ulang!', 'success');
-
+    toast('Izin kamera diberikan!', 'success');
   } catch(err) {
     camReady = false;
     btn.textContent = '✗ Kamera Error';
@@ -507,49 +560,207 @@ async function initCamera() {
 // BUKA / TUTUP CAMERA MODAL
 // ════════════════════════════════════════
 async function openCameraScan() {
-  if (!camReady) {
+  // Stop scan loop lama jika ada
+  if (scanLoop) { scanLoop.stop(); scanLoop = null; }
+
+  // Minta izin kalau belum
+  if (!camStream) {
     await initCamera();
-    if (!camReady) return;
+    if (!camStream) return;
   }
 
+  // Cek apakah stream masih aktif (bisa mati jika tab background lama)
+  const tracks = camStream.getVideoTracks();
+  if (!tracks.length || tracks[0].readyState === 'ended') {
+    // Stream mati, minta ulang
+    camStream = null;
+    camReady  = false;
+    await initCamera();
+    if (!camStream) return;
+  }
+
+  // Buka modal DULU agar video element visible di DOM
   document.getElementById('camOverlay').classList.add('open');
-  document.getElementById('camStatusTxt').textContent = 'Arahkan kamera ke QR Code item...';
+  document.getElementById('camStatusTxt').textContent = 'Memulai kamera...';
 
+  // Tunggu sebentar agar modal benar-benar rendered (penting di mobile)
+  await new Promise(r => setTimeout(r, 120));
+
+  // Pasang stream ke video SETELAH modal visible
   const video = document.getElementById('camVideo');
-  if (video.paused) video.play();
+  // Hanya re-assign jika belum ada atau stream berbeda
+  if (video.srcObject !== camStream) {
+    video.srcObject = null; // reset dulu
+    video.srcObject = camStream;
+  }
 
+  try {
+    await video.play();
+  } catch(e) {
+    // autoplay error — coba lagi dengan muted
+    video.muted = true;
+    try { await video.play(); } catch(e2) {
+      toast('Gagal play video: ' + e2.message, 'error');
+      closeCameraScan();
+      return;
+    }
+  }
+
+  // Tunggu sampai video benar-benar punya dimensi (max 5 detik)
+  await new Promise(resolve => {
+    if (video.videoWidth > 0) { resolve(); return; }
+    const check = setInterval(() => {
+      if (video.videoWidth > 0) { clearInterval(check); resolve(); }
+    }, 80);
+    setTimeout(() => { clearInterval(check); resolve(); }, 5000);
+  });
+
+  if (video.videoWidth === 0) {
+    toast('Kamera tidak menghasilkan gambar. Coba reload halaman.', 'error');
+    closeCameraScan();
+    return;
+  }
+
+  document.getElementById('camStatusTxt').textContent = 'Arahkan QR ke kamera...';
   startScanLoop();
 }
 
 function closeCameraScan() {
   if (scanLoop) { scanLoop.stop(); scanLoop = null; }
   document.getElementById('camOverlay').classList.remove('open');
+  // Pause video tapi JANGAN null srcObject & JANGAN stop track
+  // agar saat dibuka lagi tidak perlu minta izin ulang
+  const video = document.getElementById('camVideo');
+  video.pause();
+  // srcObject dibiarkan tetap ada, hanya video di-pause
+  // stream track tetap hidup (akan dimatikan saat tab ditutup)
 }
 
 // ════════════════════════════════════════
-// SCAN LOOP
+// SCAN LOOP — preprocessing + multi-attempt
 // ════════════════════════════════════════
 function startScanLoop() {
-  const video  = document.getElementById('camVideo');
-  const canvas = document.getElementById('camCanvas');
-  const ctx    = canvas.getContext('2d', { willReadFrequently: true });
-  let active   = true;
+  const video    = document.getElementById('camVideo');
+  const canvas   = document.getElementById('camCanvas');
+  const ctx      = canvas.getContext('2d', { willReadFrequently: true });
+  const statusEl = document.getElementById('camStatusTxt');
+  let active     = true;
+  let frameCount = 0;
+  let lastDecoded = null;
+  let confirmCount = 0;  // butuh 2 frame berturut-turut sebelum trigger
+
+  function enhanceContrast(imgData) {
+    const d   = imgData.data;
+    const out = new Uint8ClampedArray(d.length);
+    for (let i = 0; i < d.length; i += 4) {
+      const gray     = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+      const enhanced = Math.min(255, Math.max(0, (gray - 80) * 2.0));
+      out[i] = out[i+1] = out[i+2] = enhanced;
+      out[i+3] = 255;
+    }
+    return new ImageData(out, imgData.width, imgData.height);
+  }
+
+  function tryDecodeJsQR() {
+    if (!video || video.readyState < 2) return null;
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    if (w === 0 || h === 0) return null;
+
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width  = w;
+      canvas.height = h;
+    }
+
+    try { ctx.drawImage(video, 0, 0, w, h); } catch(e) { return null; }
+
+    let raw;
+    try { raw = ctx.getImageData(0, 0, w, h); } catch(e) { return null; }
+
+    // Pass 1: gambar asli
+    let result = jsQR(raw.data, raw.width, raw.height, { inversionAttempts: 'attemptBoth' });
+    if (result && result.data.trim()) return result.data.trim();
+
+    // Pass 2: kontras ditingkatkan (kondisi gelap / lampu kurang)
+    const enhanced = enhanceContrast(raw);
+    result = jsQR(enhanced.data, enhanced.width, enhanced.height, { inversionAttempts: 'attemptBoth' });
+    if (result && result.data.trim()) return result.data.trim();
+
+    return null;
+  }
+
+  // BarcodeDetector native (Chrome 83+, Android Chrome)
+  const barcodeDetector = (window.BarcodeDetector && !window._jsQRFailed === false)
+    ? null
+    : (window.BarcodeDetector
+        ? new window.BarcodeDetector({ formats: ['qr_code'] })
+        : null);
+
+  // Gunakan BarcodeDetector jika jsQR tidak tersedia
+  const useNativeDetector = (typeof jsQR === 'undefined') && !!window.BarcodeDetector;
+  if (useNativeDetector) {
+    statusEl.textContent = 'Menggunakan scanner native browser...';
+  }
+
+  async function tryDecodeNative() {
+    if (!video || video.readyState < 2) return null;
+    if (video.videoWidth === 0) return null;
+    try {
+      const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      const codes    = await detector.detect(video);
+      if (codes && codes.length > 0) return codes[0].rawValue;
+    } catch(e) { /* tidak support */ }
+    return null;
+  }
 
   function tick() {
     if (!active) return;
-    if (video.videoWidth > 0 && video.videoHeight > 0) {
-      canvas.width  = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      try {
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code    = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'dontInvert' });
-        if (code && code.data && code.data.trim() !== '') {
+
+    if (useNativeDetector) {
+      // BarcodeDetector: async, pakai setTimeout agar tidak block
+      tryDecodeNative().then(decoded => {
+        if (!active) return;
+        frameCount++;
+        if (frameCount % 10 === 0) {
+          statusEl.textContent = 'Scanning native... (frame ' + frameCount + ') — arahkan QR ke tengah';
+        }
+        if (decoded) {
+          if (decoded === lastDecoded) { confirmCount++; } else { lastDecoded = decoded; confirmCount = 1; }
+          if (confirmCount >= 2) {
+            active = false;
+            statusEl.textContent = '✅ Terbaca: ' + decoded;
+            onQRDetected(decoded);
+            return;
+          }
+        } else { lastDecoded = null; confirmCount = 0; }
+        setTimeout(() => requestAnimationFrame(tick), 100); // native lebih hemat, cukup 10fps
+      }).catch(() => { if (active) requestAnimationFrame(tick); });
+      return;
+    }
+
+    // jsQR path
+    if (typeof jsQR === 'undefined') {
+      statusEl.textContent = '⚠ Library scan tidak tersedia. Coba refresh atau gunakan Input Manual.';
+      return;
+    }
+
+    try {
+      const decoded = tryDecodeJsQR();
+      frameCount++;
+      if (frameCount % 15 === 0) {
+        statusEl.textContent = 'Scanning... (frame ' + frameCount + ') — arahkan QR ke tengah';
+      }
+      if (decoded) {
+        if (decoded === lastDecoded) { confirmCount++; } else { lastDecoded = decoded; confirmCount = 1; }
+        if (confirmCount >= 2) {
           active = false;
-          onQRDetected(code.data.trim());
+          statusEl.textContent = '✅ Terbaca: ' + decoded;
+          onQRDetected(decoded);
           return;
         }
-      } catch(e) { /* frame rusak, lanjut */ }
+      } else { lastDecoded = null; confirmCount = 0; }
+    } catch(e) {
+      statusEl.textContent = 'Error: ' + e.message;
     }
     requestAnimationFrame(tick);
   }
@@ -558,31 +769,26 @@ function startScanLoop() {
   requestAnimationFrame(tick);
 }
 
+
 // ════════════════════════════════════════
-// QR TERDETEKSI — FIX BUG #1 #2 #3
+// QR TERDETEKSI
 // ════════════════════════════════════════
 function onQRDetected(qrText) {
-  document.getElementById('camStatusTxt').textContent = '✅ QR terdeteksi!';
-
   const pipeIdx  = qrText.indexOf('|');
   const itemCode = (pipeIdx > -1 ? qrText.substring(0, pipeIdx) : qrText).trim().toUpperCase();
 
-  // FIX #3: Tutup kamera DULU sebelum buka modal (hilangkan race condition)
+  toast('QR terbaca: ' + itemCode, 'info');
   closeCameraScan();
 
-  // FIX #1: Gunakan toUpperCase() saat compare agar tidak case-sensitive
   const item = allItems.find(i => (i.itemCode || '').trim().toUpperCase() === itemCode);
 
   if (item) {
-    // Item ditemukan langsung — buka modal tanpa delay
     openStockModal(item.itemCode);
   } else if (allItems.length === 0) {
-    // allItems belum ter-load sama sekali — fetch dulu
-    toast('Mengambil data item...', 'info');
+    toast('Data belum dimuat, mengambil dari server...', 'info');
     fetchAndOpenModal(itemCode);
   } else {
-    // allItems sudah ada tapi kode tidak ditemukan
-    toast('Item ' + itemCode + ' tidak ditemukan di database', 'error');
+    toast('⚠ Item tidak ditemukan: ' + itemCode, 'error');
   }
 }
 
@@ -629,8 +835,10 @@ function openManualModal() {
 // STOCK MODAL — FULL SCREEN
 // ════════════════════════════════════════
 function openStockModal(itemCode) {
-  const item = allItems.find(i => i.itemCode === itemCode);
-  if (!item) { toast('Item tidak ditemukan', 'error'); return; }
+  const item = allItems.find(i =>
+    (i.itemCode || '').trim().toUpperCase() === (itemCode || '').trim().toUpperCase()
+  );
+  if (!item) { toast('⚠ Item tidak ditemukan: ' + itemCode, 'error'); return; }
 
   currentItem = item;
   txType      = 'IN';
@@ -642,6 +850,9 @@ function openStockModal(itemCode) {
   document.getElementById('stkPicErr').textContent  = '';
   document.getElementById('stkPreview').innerHTML   = '';
   document.getElementById('successFlash').classList.remove('show');
+
+  // Reset peruntukan
+  resetPeruntukan();
 
   document.getElementById('stkTitle').textContent   = item.itemCode;
   document.getElementById('stkCode').textContent    = item.itemCode;
@@ -670,6 +881,9 @@ function setTxType(type) {
   const btn = document.getElementById('stkSubmitBtn');
   btn.textContent = type === 'IN' ? '▲ CONFIRM IN' : '▼ CONFIRM OUT';
   btn.className   = 'btn-confirm' + (type === 'OUT' ? ' out-mode' : '');
+  // Tampilkan section peruntukan hanya saat OUT
+  document.getElementById('peruntukanSection').style.display = type === 'OUT' ? 'block' : 'none';
+  if (type === 'OUT' && eqUnits.length === 0) loadEqData();
   previewQty();
 }
 
@@ -696,8 +910,11 @@ async function submitStock() {
   const notes = document.getElementById('stkNotes').value.trim();
 
   let ok = true;
-  document.getElementById('stkQtyErr').textContent = '';
-  document.getElementById('stkPicErr').textContent = '';
+  document.getElementById('stkQtyErr').textContent  = '';
+  document.getElementById('stkPicErr').textContent  = '';
+  if (document.getElementById('stkUnitErr'))  document.getElementById('stkUnitErr').textContent  = '';
+  if (document.getElementById('stkAreaErr'))  document.getElementById('stkAreaErr').textContent  = '';
+  if (document.getElementById('stkEquipErr')) document.getElementById('stkEquipErr').textContent = '';
 
   if (!qty || qty <= 0) { document.getElementById('stkQtyErr').textContent = 'Jumlah wajib diisi (min 1)'; ok = false; }
   if (!pic)             { document.getElementById('stkPicErr').textContent = 'PIC wajib diisi'; ok = false; }
@@ -705,6 +922,20 @@ async function submitStock() {
     document.getElementById('stkQtyErr').textContent = 'Stok tidak cukup. Maks: ' + (currentItem?.stock||0);
     ok = false;
   }
+
+  // Validasi peruntukan (wajib saat OUT)
+  let peruntukanStr = '';
+  let unitId = '', areaId = '', equipId = '';
+  if (txType === 'OUT') {
+    unitId  = document.getElementById('stkUnit_sel').value;
+    areaId  = document.getElementById('stkArea_sel').value;
+    equipId = document.getElementById('stkEquip_sel').value;
+    if (!unitId)  { document.getElementById('stkUnitErr').textContent  = 'Unit wajib dipilih';      ok = false; }
+    if (!areaId)  { document.getElementById('stkAreaErr').textContent  = 'Area wajib dipilih';      ok = false; }
+    if (!equipId) { document.getElementById('stkEquipErr').textContent = 'Equipment wajib dipilih'; ok = false; }
+    if (ok) peruntukanStr = buildPeruntukanStr(unitId, areaId, equipId);
+  }
+
   if (!ok) return;
 
   const btn = document.getElementById('stkSubmitBtn');
@@ -715,7 +946,7 @@ async function submitStock() {
     const res = await fetch(API_URL + '?action=updateStock', {
       method:  'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body:    JSON.stringify({ itemCode: currentItem.itemCode, txType, quantity: qty, pic, notes })
+      body:    JSON.stringify({ itemCode: currentItem.itemCode, txType, quantity: qty, pic, notes, peruntukan: peruntukanStr, unitId, areaId, equipId })
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Gagal update stok');
@@ -731,7 +962,8 @@ async function submitStock() {
       txType === 'IN' ? `+${qty} ${currentItem.unit||'pcs'} berhasil ditambahkan!`
                       : `-${qty} ${currentItem.unit||'pcs'} berhasil dikurangi!`;
     document.getElementById('successSub').textContent =
-      currentItem.itemCode + ' — stok sekarang: ' + newStock + ' ' + (currentItem.unit||'pcs');
+      currentItem.itemCode + ' — stok sekarang: ' + newStock + ' ' + (currentItem.unit||'pcs') +
+      (peruntukanStr ? '\n' + peruntukanStr : '');
 
     document.getElementById('stkQty').value   = '';
     document.getElementById('stkNotes').value = '';
@@ -752,6 +984,148 @@ async function submitStock() {
   setTxType(txType);
 }
 
+// ════════════════════════════════════════
+// EQ REFERENCE DATA — Unit / Area / Equipment
+// ════════════════════════════════════════
+async function loadEqData() {
+  const unitSel  = document.getElementById('stkUnit_sel');
+  const areaSel  = document.getElementById('stkArea_sel');
+  const equipSel = document.getElementById('stkEquip_sel');
+  unitSel.innerHTML  = '<option value="">⏳ Memuat Unit...</option>';
+  areaSel.innerHTML  = '<option value="">— Pilih Area —</option>';
+  equipSel.innerHTML = '<option value="">— Pilih Equipment —</option>';
+  areaSel.disabled   = true;
+  equipSel.disabled  = true;
+
+  try {
+    // Pakai fn=readEDB yang sudah ada di GAS — ambil semua sekaligus
+    const res  = await fetch(API_URL + '?fn=readEDB');
+    const json = await res.json();
+
+    if (!json.ok || !json.data) throw new Error(json.message || 'Gagal ambil EQ data');
+
+    eqUnits     = json.data.units     || [];
+    eqAreas     = json.data.areas     || [];
+    eqEquipment = json.data.equipment || [];
+
+    // Populate Unit dropdown
+    unitSel.innerHTML = '<option value="">— Pilih Unit —</option>';
+    eqUnits.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value       = u.id;
+      opt.textContent = u.name || u.id;
+      unitSel.appendChild(opt);
+    });
+
+    if (eqUnits.length === 0) {
+      unitSel.innerHTML = '<option value="">— Tidak ada data Unit —</option>';
+    }
+
+  } catch(e) {
+    unitSel.innerHTML = '<option value="">⚠ Gagal memuat data</option>';
+    toast('Gagal load EQ data: ' + e.message, 'error');
+  }
+}
+
+function onUnitChange() {
+  const unitId   = document.getElementById('stkUnit_sel').value;
+  const areaSel  = document.getElementById('stkArea_sel');
+  const equipSel = document.getElementById('stkEquip_sel');
+
+  areaSel.innerHTML  = '<option value="">— Pilih Area —</option>';
+  equipSel.innerHTML = '<option value="">— Pilih Equipment —</option>';
+  areaSel.disabled   = true;
+  equipSel.disabled  = true;
+  updatePeruntukanPreview();
+
+  if (!unitId) return;
+
+  // GAS schema EQ_AREAS: ['id','name','unitId','location']
+  const filtered = eqAreas.filter(a => String(a.unitId || '') === String(unitId));
+
+  filtered.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value       = a.id;
+    opt.textContent = a.name || a.id;
+    areaSel.appendChild(opt);
+  });
+
+  if (filtered.length === 0) {
+    areaSel.innerHTML = '<option value="">— Tidak ada area untuk unit ini —</option>';
+  }
+  areaSel.disabled = filtered.length === 0;
+}
+
+function onAreaChange() {
+  const areaId   = document.getElementById('stkArea_sel').value;
+  const equipSel = document.getElementById('stkEquip_sel');
+
+  equipSel.innerHTML = '<option value="">— Pilih Equipment —</option>';
+  equipSel.disabled  = true;
+  updatePeruntukanPreview();
+
+  if (!areaId) return;
+
+  // GAS schema EQ_EQUIPMENT: ['id','name','unitId','areaId','brand',...]
+  const filtered = eqEquipment.filter(e => String(e.areaId || '') === String(areaId));
+
+  filtered.forEach(e => {
+    const opt = document.createElement('option');
+    opt.value       = e.id;
+    opt.textContent = e.name || e.id;
+    equipSel.appendChild(opt);
+  });
+
+  if (filtered.length === 0) {
+    equipSel.innerHTML = '<option value="">— Tidak ada equipment untuk area ini —</option>';
+  }
+  equipSel.disabled = filtered.length === 0;
+  equipSel.onchange = updatePeruntukanPreview;
+}
+
+function buildPeruntukanStr(unitId, areaId, equipId) {
+  const unit  = eqUnits.find(u     => String(u.id) === String(unitId));
+  const area  = eqAreas.find(a     => String(a.id) === String(areaId));
+  const equip = eqEquipment.find(e => String(e.id) === String(equipId));
+
+  const uName = unit  ? (unit.name  || unitId)  : unitId;
+  const aName = area  ? (area.name  || areaId)  : areaId;
+  const eName = equip ? (equip.name || equipId) : equipId;
+
+  return `Peruntukan: ${uName} › ${aName} | ${eName}`;
+}
+
+function updatePeruntukanPreview() {
+  const unitId  = document.getElementById('stkUnit_sel').value;
+  const areaId  = document.getElementById('stkArea_sel').value;
+  const equipId = document.getElementById('stkEquip_sel').value;
+  const preview = document.getElementById('peruntukanPreview');
+  if (unitId && areaId && equipId) {
+    preview.style.display  = 'block';
+    preview.textContent    = buildPeruntukanStr(unitId, areaId, equipId);
+  } else {
+    preview.style.display  = 'none';
+  }
+}
+
+function resetPeruntukan() {
+  const unitSel  = document.getElementById('stkUnit_sel');
+  const areaSel  = document.getElementById('stkArea_sel');
+  const equipSel = document.getElementById('stkEquip_sel');
+  if (!unitSel) return;
+  unitSel.value  = '';
+  areaSel.innerHTML  = '<option value="">— Pilih Area —</option>';
+  equipSel.innerHTML = '<option value="">— Pilih Equipment —</option>';
+  areaSel.disabled   = true;
+  equipSel.disabled  = true;
+  document.getElementById('peruntukanPreview').style.display = 'none';
+  document.getElementById('peruntukanSection').style.display = 'none';
+  if (document.getElementById('stkUnitErr'))  document.getElementById('stkUnitErr').textContent  = '';
+  if (document.getElementById('stkAreaErr'))  document.getElementById('stkAreaErr').textContent  = '';
+  if (document.getElementById('stkEquipErr')) document.getElementById('stkEquipErr').textContent = '';
+}
+
+// ════════════════════════════════════════
 function refreshCardStock(itemCode, newStock) {
   const card = document.getElementById('card-' + sid(itemCode));
   if (!card) return;
