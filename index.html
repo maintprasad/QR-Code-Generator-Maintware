@@ -418,7 +418,7 @@ let allItems     = [];
 let filteredItems= [];
 let selected     = new Set();
 let currentSize  = 'md';
-let currentItem  = null;   // item yg sedang di modal stock
+let currentItem  = null;
 let txType       = 'IN';
 let camStream    = null;
 let scanInterval = null;
@@ -429,7 +429,6 @@ let scanInterval = null;
 document.addEventListener('DOMContentLoaded', () => {
   initDark();
   loadItems();
-  // Tutup overlay saat klik backdrop
   document.querySelectorAll('.overlay').forEach(el => {
     el.addEventListener('click', e => {
       if (e.target === el) {
@@ -554,7 +553,6 @@ function generateQR(item) {
   const code   = item.itemCode || '?';
   const wrapEl = document.getElementById('qrwrap-' + sid(code));
   if (!wrapEl) return;
-  // QR hanya encode code + name (simpel, cukup untuk lookup)
   const qrText = code + '|' + (item.itemName || '');
   wrapEl.innerHTML = '';
   try {
@@ -572,7 +570,7 @@ function generateQR(item) {
 }
 
 // ════════════════════════════════════════
-// CAMERA SCAN
+// CAMERA SCAN (FIXED)
 // ════════════════════════════════════════
 async function openCamera() {
   document.getElementById('camOverlay').classList.add('open');
@@ -584,7 +582,14 @@ async function openCamera() {
     });
     const video = document.getElementById('camVideo');
     video.srcObject = camStream;
-    await video.play();
+
+    // FIX: Tunggu metadata video benar-benar siap sebelum mulai scan
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = resolve;
+      video.onerror = reject;
+      video.play();
+    });
+
     document.getElementById('camStatus').textContent = 'Arahkan kamera ke QR Code item...';
     startScanLoop();
   } catch(err) {
@@ -601,27 +606,47 @@ function closeCamera() {
 function startScanLoop() {
   const video  = document.getElementById('camVideo');
   const canvas = document.getElementById('camCanvas');
-  const ctx    = canvas.getContext('2d');
+  const ctx    = canvas.getContext('2d', { willReadFrequently: true }); // FIX: hint performa
+  let scanning = true;
 
-  scanInterval = setInterval(() => {
-    if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-    canvas.width  = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  function tick() {
+    if (!scanning) return;
 
-    try {
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code    = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'dontInvert' });
-      if (code && code.data) {
-        onQRDetected(code.data);
-      }
-    } catch(e) { /* ignore */ }
-  }, 300);
+    // FIX: Guard eksplisit — pastikan video punya dimensi valid sebelum drawImage
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      try {
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code    = jsQR(imgData.data, imgData.width, imgData.height, {
+          inversionAttempts: 'dontInvert'
+        });
+        if (code && code.data && code.data.trim() !== '') {
+          scanning = false; // Stop loop sebelum callback
+          onQRDetected(code.data.trim());
+          return;
+        }
+      } catch(e) { /* frame rusak, lanjut ke frame berikutnya */ }
+    }
+
+    // FIX: requestAnimationFrame jauh lebih reliable dari setInterval
+    requestAnimationFrame(tick);
+  }
+
+  // Simpan fungsi stop ke scanInterval agar bisa dipanggil dari closeCamera
+  scanInterval = { stop: () => { scanning = false; } };
+  requestAnimationFrame(tick);
 }
 
 function stopScan() {
-  clearInterval(scanInterval);
+  // FIX: Stop loop rAF via flag object
+  if (scanInterval && typeof scanInterval.stop === 'function') {
+    scanInterval.stop();
+  }
   scanInterval = null;
+
   if (camStream) {
     camStream.getTracks().forEach(t => t.stop());
     camStream = null;
@@ -631,15 +656,12 @@ function stopScan() {
 }
 
 function onQRDetected(qrText) {
-  // Stop scan immediately
-  stopScan();
-  document.getElementById('camStatus').textContent = '✅ QR terdeteksi!';
+  document.getElementById('camStatus').textContent = '✅ QR terdeteksi: ' + qrText;
 
-  // Parse: format "CODE|NAME"
-  const parts    = qrText.split('|');
-  const itemCode = parts[0].trim();
+  // FIX: Gunakan indexOf agar aman meski nama item mengandung karakter pipe '|'
+  const pipeIdx  = qrText.indexOf('|');
+  const itemCode = (pipeIdx > -1 ? qrText.substring(0, pipeIdx) : qrText).trim();
 
-  // Cari item di allItems
   const item = allItems.find(i => i.itemCode === itemCode);
 
   setTimeout(() => {
@@ -647,11 +669,10 @@ function onQRDetected(qrText) {
     if (item) {
       openStockModal(item.itemCode);
     } else {
-      // Coba fetch ulang dari GAS kalau tidak ketemu lokal
       toast('Item ' + itemCode + ' ditemukan di QR, mengambil data...', 'info');
       fetchAndOpenModal(itemCode);
     }
-  }, 500);
+  }, 600);
 }
 
 async function fetchAndOpenModal(itemCode) {
@@ -673,7 +694,7 @@ async function fetchAndOpenModal(itemCode) {
 }
 
 // ════════════════════════════════════════
-// MANUAL INPUT (tanpa scan kamera)
+// MANUAL INPUT
 // ════════════════════════════════════════
 function openManualModal() {
   const code = prompt('Masukkan Kode Item (contoh: MECH-001):');
@@ -696,7 +717,6 @@ function openStockModal(itemCode) {
   currentItem = item;
   txType      = 'IN';
 
-  // Reset form
   document.getElementById('stkQty').value    = '';
   document.getElementById('stkPic').value    = '';
   document.getElementById('stkNotes').value  = '';
@@ -705,7 +725,6 @@ function openStockModal(itemCode) {
   document.getElementById('stkPreview').innerHTML   = '';
   document.getElementById('successFlash').classList.remove('show');
 
-  // Fill item info
   document.getElementById('stkTitle').textContent   = 'Update Stok — ' + item.itemCode;
   document.getElementById('stkCode').textContent    = item.itemCode;
   document.getElementById('stkName').textContent    = item.itemName || '—';
@@ -718,7 +737,6 @@ function openStockModal(itemCode) {
   setTxType('IN');
   document.getElementById('stockOverlay').classList.add('open');
 
-  // Focus qty
   setTimeout(() => document.getElementById('stkQty').focus(), 200);
 }
 
@@ -759,7 +777,6 @@ async function submitStock() {
   const pic   = document.getElementById('stkPic').value.trim();
   const notes = document.getElementById('stkNotes').value.trim();
 
-  // Validasi
   let ok = true;
   document.getElementById('stkQtyErr').textContent = '';
   document.getElementById('stkPicErr').textContent = '';
@@ -798,7 +815,6 @@ async function submitStock() {
     const data = await res.json();
     if (!data.success) throw new Error(data.message || 'Gagal update stok');
 
-    // Update local state
     const idx = allItems.findIndex(i => i.itemCode === currentItem.itemCode);
     const newStock = txType === 'IN'
       ? (currentItem.stock || 0) + qty
@@ -808,10 +824,8 @@ async function submitStock() {
       currentItem.stock   = newStock;
     }
 
-    // Refresh card stok
     refreshCardStock(currentItem.itemCode, newStock);
 
-    // Show success
     document.getElementById('successFlash').classList.add('show');
     document.getElementById('successMsg').textContent =
       txType === 'IN'
@@ -820,7 +834,6 @@ async function submitStock() {
     document.getElementById('successSub').textContent =
       currentItem.itemCode + ' — stok sekarang: ' + newStock + ' ' + (currentItem.unit||'pcs');
 
-    // Reset form
     document.getElementById('stkQty').value   = '';
     document.getElementById('stkNotes').value = '';
     document.getElementById('stkPreview').innerHTML = '';
@@ -830,7 +843,6 @@ async function submitStock() {
 
     toast(`Stock ${txType} berhasil: ${qty} ${currentItem.unit||'pcs'}`, 'success');
 
-    // Auto close setelah 2 detik
     setTimeout(() => closeStockModal(), 2200);
 
   } catch(err) {
@@ -843,7 +855,6 @@ async function submitStock() {
 }
 
 function refreshCardStock(itemCode, newStock) {
-  // Update tampilan stok di card
   const card = document.getElementById('card-' + sid(itemCode));
   if (!card) return;
   const item  = allItems.find(i => i.itemCode === itemCode);
